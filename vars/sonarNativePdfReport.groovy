@@ -8,13 +8,6 @@ import java.awt.Color
 /**
  * Native PDF SonarQube Report Generator (No HTML, no file permission issues)
  * Generates PDF in-memory on master, transfers to agent workspace via Base64.
- *
- * Usage:
- *   @Library('sonar-pdf-reports') _
- *   sonarNativePdfReport(
- *       recipientEmail: 'team@company.com',
- *       fromEmail: 'jenkins@company.com'
- *   )
  */
 def call(Map config = [:]) {
 
@@ -83,7 +76,7 @@ def call(Map config = [:]) {
     def addHorizontalRule = { color ->
         def hrTable = new PdfPTable(1)
         hrTable.widthPercentage = 100
-        def hrCell = new PdfPCell(new Phrase(" "))
+        def hrCell = new PdfPCell(new Phrase(' '))
         hrCell.border = Rectangle.BOTTOM
         hrCell.borderColor = color
         hrCell.borderWidthBottom = 1f
@@ -101,12 +94,14 @@ def call(Map config = [:]) {
         c1.backgroundColor = bgColor
         c1.horizontalAlignment = Element.ALIGN_CENTER
         c1.border = Rectangle.NO_BORDER
-        c1.paddingTop = 12; c1.paddingBottom = 4
+        c1.paddingTop = 12
+        c1.paddingBottom = 4
         def c2 = new PdfPCell(new Phrase(label, fontMetLabel))
         c2.backgroundColor = bgColor
         c2.horizontalAlignment = Element.ALIGN_CENTER
         c2.border = Rectangle.NO_BORDER
-        c2.paddingTop = 2; c2.paddingBottom = 12
+        c2.paddingTop = 2
+        c2.paddingBottom = 12
         table.addCell(c1)
         table.addCell(c2)
         def wrap = new PdfPCell(table)
@@ -121,9 +116,10 @@ def call(Map config = [:]) {
     def titleCell = new PdfPCell()
     titleCell.backgroundColor = headerColor
     titleCell.horizontalAlignment = Element.ALIGN_CENTER
-    titleCell.paddingTop = 20; titleCell.paddingBottom = 20
+    titleCell.paddingTop = 20
+    titleCell.paddingBottom = 20
     titleCell.border = Rectangle.NO_BORDER
-    titleCell.addElement(new Paragraph("SonarQube Analysis Report", fontTitle))
+    titleCell.addElement(new Paragraph('SonarQube Analysis Report', fontTitle))
     def badge = new Paragraph(statusText, fontBadge)
     badge.alignment = Element.ALIGN_CENTER
     titleCell.addElement(badge)
@@ -138,8 +134,10 @@ def call(Map config = [:]) {
     alertCell.backgroundColor = alertColor
     alertCell.horizontalAlignment = Element.ALIGN_LEFT
     alertCell.verticalAlignment = Element.ALIGN_MIDDLE
-    alertCell.paddingTop = 10; alertCell.paddingBottom = 10
-    alertCell.paddingLeft = 12; alertCell.paddingRight = 12
+    alertCell.paddingTop = 10
+    alertCell.paddingBottom = 10
+    alertCell.paddingLeft = 12
+    alertCell.paddingRight = 12
     alertCell.border = Rectangle.NO_BORDER
     alertTable.addCell(alertCell)
     doc.add(alertTable)
@@ -149,14 +147,16 @@ def call(Map config = [:]) {
         def warnTable = new PdfPTable(1)
         warnTable.widthPercentage = 100
         def warnFont = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(133, 100, 4))
-        def warnCell = new PdfPCell(new Phrase(
-            "New Issues Detected: ${totalNewIssues} new issue(s) found in this commit. Please review before merging.", warnFont))
+        def warnMsg = "New Issues Detected: ${totalNewIssues} new issue(s) found in this commit. Please review before merging."
+        def warnCell = new PdfPCell(new Phrase(warnMsg, warnFont))
         warnCell.backgroundColor = new Color(255, 243, 205)
         warnCell.border = Rectangle.BOX
         warnCell.borderColor = new Color(253, 126, 20)
         warnCell.borderWidth = 1.5f
-        warnCell.paddingTop = 10; warnCell.paddingBottom = 10
-        warnCell.paddingLeft = 12; warnCell.paddingRight = 12
+        warnCell.paddingTop = 10
+        warnCell.paddingBottom = 10
+        warnCell.paddingLeft = 12
+        warnCell.paddingRight = 12
         warnTable.addCell(warnCell)
         doc.add(warnTable)
         doc.add(Chunk.NEWLINE)
@@ -172,8 +172,8 @@ def call(Map config = [:]) {
     }
 
     // ─── BUILD INFO ───
-    addSection("Build Information")
-    def infoTable = new PdfPTable([30, 70] as float[])
+    addSection('Build Information')
+    def infoTable = new PdfPTable([30f, 70f] as float[])
     infoTable.widthPercentage = 100
     def infoRows = [
         ['Project',      safe(env.JOB_NAME)],
@@ -186,11 +186,15 @@ def call(Map config = [:]) {
     ]
     infoRows.each { row ->
         def c1 = new PdfPCell(new Phrase(row[0], fontLabel))
-        c1.border = Rectangle.BOTTOM; c1.borderColor = new Color(233, 236, 239)
-        c1.paddingTop = 6; c1.paddingBottom = 6
+        c1.border = Rectangle.BOTTOM
+        c1.borderColor = new Color(233, 236, 239)
+        c1.paddingTop = 6
+        c1.paddingBottom = 6
         def c2 = new PdfPCell(new Phrase(row[1], fontBoldVal))
-        c2.border = Rectangle.BOTTOM; c2.borderColor = new Color(233, 236, 239)
-        c2.paddingTop = 6; c2.paddingBottom = 6
+        c2.border = Rectangle.BOTTOM
+        c2.borderColor = new Color(233, 236, 239)
+        c2.paddingTop = 6
+        c2.paddingBottom = 6
         infoTable.addCell(c1)
         infoTable.addCell(c2)
     }
@@ -198,7 +202,7 @@ def call(Map config = [:]) {
     doc.add(Chunk.NEWLINE)
 
     // ─── NEW ISSUES ───
-    addSection("New Issues (Introduced in This Commit)")
+    addSection('New Issues (Introduced in This Commit)')
     def newTable = new PdfPTable(4)
     newTable.widthPercentage = 100
     def newIssues = [
@@ -212,8 +216,8 @@ def call(Map config = [:]) {
     doc.add(Chunk.NEWLINE)
 
     // ─── FINAL SUMMARY ───
-    addSection("Final Summary")
-    def sumTable = new PdfPTable([40, 60] as float[])
+    addSection('Final Summary')
+    def sumTable = new PdfPTable([40f, 60f] as float[])
     sumTable.widthPercentage = 100
     def sumRows = [
         ['Quality Gate',        safe(env.SONAR_STATUS, 'UNKNOWN')],
@@ -232,18 +236,23 @@ def call(Map config = [:]) {
     ]
     sumRows.each { row ->
         def c1 = new PdfPCell(new Phrase(row[0], fontLabel))
-        c1.border = Rectangle.BOTTOM; c1.borderColor = new Color(233, 236, 239)
-        c1.paddingTop = 6; c1.paddingBottom = 6
+        c1.border = Rectangle.BOTTOM
+        c1.borderColor = new Color(233, 236, 239)
+        c1.paddingTop = 6
+        c1.paddingBottom = 6
         def c2 = new PdfPCell(new Phrase(row[1], fontBoldVal))
-        c2.border = Rectangle.BOTTOM; c2.borderColor = new Color(233, 236, 239)
-        c2.paddingTop = 6; c2.paddingBottom = 6
-        sumTable.addCell(c1); sumTable.addCell(c2)
+        c2.border = Rectangle.BOTTOM
+        c2.borderColor = new Color(233, 236, 239)
+        c2.paddingTop = 6
+        c2.paddingBottom = 6
+        sumTable.addCell(c1)
+        sumTable.addCell(c2)
     }
     doc.add(sumTable)
     doc.add(Chunk.NEWLINE)
 
     // ─── OVERALL METRICS ───
-    addSection("Overall Code Quality Metrics")
+    addSection('Overall Code Quality Metrics')
     def metTable = new PdfPTable(4)
     metTable.widthPercentage = 100
     def metrics = [
@@ -267,7 +276,7 @@ def call(Map config = [:]) {
     doc.add(Chunk.NEWLINE)
 
     // ─── SEVERITY BREAKDOWN ───
-    addSection("Issue Severity Breakdown")
+    addSection('Issue Severity Breakdown')
     def sevTable = new PdfPTable(5)
     sevTable.widthPercentage = 100
     def severities = [
@@ -282,11 +291,16 @@ def call(Map config = [:]) {
         inner.widthPercentage = 100
         def c1 = new PdfPCell(new Phrase(s[0], s[2]))
         c1.horizontalAlignment = Element.ALIGN_CENTER
-        c1.border = Rectangle.NO_BORDER; c1.paddingTop = 8; c1.paddingBottom = 4
+        c1.border = Rectangle.NO_BORDER
+        c1.paddingTop = 8
+        c1.paddingBottom = 4
         def c2 = new PdfPCell(new Phrase(s[1], new Font(Font.HELVETICA, 8, Font.BOLD, new Color(108, 117, 125))))
         c2.horizontalAlignment = Element.ALIGN_CENTER
-        c2.border = Rectangle.NO_BORDER; c2.paddingTop = 2; c2.paddingBottom = 8
-        inner.addCell(c1); inner.addCell(c2)
+        c2.border = Rectangle.NO_BORDER
+        c2.paddingTop = 2
+        c2.paddingBottom = 8
+        inner.addCell(c1)
+        inner.addCell(c2)
         def wrap = new PdfPCell(inner)
         wrap.backgroundColor = new Color(248, 249, 250)
         wrap.border = Rectangle.NO_BORDER
@@ -297,17 +311,66 @@ def call(Map config = [:]) {
     doc.add(Chunk.NEWLINE)
 
     // ─── QUICK LINKS ───
-    addSection("Quick Links")
-    def links = [
-        ["Dashboard",       "${sonarHost}/dashboard?id=${projectKey}"],
-        ["Metrics",         "${sonarHost}/component_measures?id=${projectKey}"],
-        ["All Issues",      "${sonarHost}/project/issues?id=${projectKey}&resolved=false"],
-        ["New Issues",      "${sonarHost}/project/issues?id=${projectKey}&resolved=false&sinceLeakPeriod=true"],
-        ["Hotspots",        "${sonarHost}/security_hotspots?id=${projectKey}"],
-        ["Jenkins Console", "${safe(env.BUILD_URL)}console"]
+    addSection('Quick Links')
+    def linkList = [
+        ['Dashboard',       "${sonarHost}/dashboard?id=${projectKey}"],
+        ['Metrics',         "${sonarHost}/component_measures?id=${projectKey}"],
+        ['All Issues',      "${sonarHost}/project/issues?id=${projectKey}&resolved=false"],
+        ['New Issues',      "${sonarHost}/project/issues?id=${projectKey}&resolved=false&sinceLeakPeriod=true"],
+        ['Hotspots',        "${sonarHost}/security_hotspots?id=${projectKey}"],
+        ['Jenkins Console', "${safe(env.BUILD_URL)}console"]
     ]
-    links.each { link ->
+    linkList.each { item ->
         def p = new Paragraph()
-        p.add(new Chunk("${link[0]}: ", fontLabel))
-        def anchor = new Anchor(link[1], fontLink)
-        anchor.reference = link
+        p.add(new Chunk("${item[0]}: ", fontLabel))
+        def anchor = new Anchor(item[1], fontLink)
+        anchor.reference = item[1]
+        p.add(anchor)
+        p.spacingAfter = 4
+        doc.add(p)
+    }
+
+    // ─── FOOTER ───
+    doc.add(Chunk.NEWLINE)
+    addHorizontalRule(new Color(233, 236, 239))
+    def footerText = "Generated by Jenkins | Build #${safe(env.BUILD_NUMBER)} | ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
+    def footerP = new Paragraph(footerText, fontFooter)
+    footerP.alignment = Element.ALIGN_CENTER
+    footerP.spacingBefore = 8
+    doc.add(footerP)
+
+    doc.close()
+
+    // ─── Transfer PDF to Agent Workspace ───
+    def pdfName = "sonar-report-${env.BUILD_NUMBER}.pdf"
+    def b64Name = ".sonar-report-${env.BUILD_NUMBER}.b64"
+
+    def base64 = java.util.Base64.getEncoder().encodeToString(baos.toByteArray())
+
+    writeFile file: b64Name, text: base64
+    sh "base64 -d ${b64Name} > ${pdfName} && rm -f ${b64Name}"
+
+    echo "Native PDF generated and transferred to agent workspace: ${pdfName}"
+
+    // ─── EMAIL WITH PDF ATTACHMENT ───
+    emailext (
+        subject: "[${statusText}] SonarQube Report: ${safe(env.JOB_NAME)} #${safe(env.BUILD_NUMBER)}",
+        body: """
+            <p>Please find the attached SonarQube Quality Report (PDF).</p>
+            <p><strong>Project:</strong> ${safe(env.JOB_NAME)}<br>
+               <strong>Build:</strong> #${safe(env.BUILD_NUMBER)}<br>
+               <strong>Status:</strong> ${statusText}<br>
+               <strong>Quality Gate:</strong> ${safe(env.SONAR_STATUS, 'UNKNOWN')}</p>
+            <p><em>Automated report from Jenkins.</em></p>
+        """,
+        to: recipient,
+        from: fromEmail,
+        mimeType: 'text/html',
+        attachmentsPattern: pdfName,
+        attachLog: true
+    )
+
+    // Cleanup
+    sh "rm -f ${pdfName}"
+    echo "Cleaned up PDF file from workspace."
+}
