@@ -6,8 +6,15 @@ import com.lowagie.text.pdf.*
 import java.awt.Color
 
 /**
- * Native PDF SonarQube Report Generator (No HTML, no file permission issues)
- * Generates PDF in-memory on master, transfers to agent workspace via Base64.
+ * Executive SonarQube PDF Report Generator
+ * Replicates the bitegarden-style executive summary natively in PDF.
+ *
+ * Usage:
+ *   @Library('sonar-pdf-reports') _
+ *   sonarNativePdfReport(
+ *       recipientEmail: 'team@company.com',
+ *       fromEmail: 'jenkins@company.com'
+ *   )
  */
 def call(Map config = [:]) {
 
@@ -16,347 +23,66 @@ def call(Map config = [:]) {
     def sonarHost   = config.sonarHost     ?: env.SONAR_HOST ?: 'http://192.168.0.5:9000'
     def projectKey  = config.projectKey    ?: env.SONAR_PROJECT_KEY ?: 'STB_Automation_Framework'
 
-    // ─── Status & Colors ───
-    def buildStatus = currentBuild.currentResult
-    def statusText, headerColor, alertColor, alertMsg
-
-    if (buildStatus == 'SUCCESS') {
-        statusText  = 'PASSED'
-        headerColor = new Color(40, 167, 69)
-        alertColor  = new Color(212, 237, 218)
-        alertMsg    = 'All quality checks passed. No action required.'
-    } else if (buildStatus == 'UNSTABLE') {
-        statusText  = 'QUALITY GATE FAILED'
-        headerColor = new Color(253, 126, 20)
-        alertColor  = new Color(255, 243, 205)
-        alertMsg    = 'The SonarQube Quality Gate did not pass. Please review the new issues.'
-    } else {
-        statusText  = 'BUILD FAILED'
-        headerColor = new Color(220, 53, 69)
-        alertColor  = new Color(248, 215, 218)
-        alertMsg    = 'The pipeline failed. Report shows the latest available scan data.'
-    }
-
     def safe = { val, fallback = 'N/A' ->
         (val == null || val.toString().trim() == '') ? fallback : val.toString()
     }
 
-    def totalNewIssues = 0
-    try {
-        totalNewIssues = safe(env.SONAR_NEW_BUGS, '0').toInteger() +
-                         safe(env.SONAR_NEW_VULNERABILITIES, '0').toInteger() +
-                         safe(env.SONAR_NEW_CODE_SMELLS, '0').toInteger() +
-                         safe(env.SONAR_NEW_HOTSPOTS, '0').toInteger()
-    } catch (e) { totalNewIssues = 0 }
+    def buildStatus = currentBuild.currentResult
+    def statusText = (buildStatus == 'SUCCESS') ? 'PASSED' :
+                     (buildStatus == 'UNSTABLE') ? 'QUALITY GATE FAILED' : 'BUILD FAILED'
 
-    // ─── PDF Generation (In-Memory on Master) ───
-    def baos = new ByteArrayOutputStream()
-    def doc = new Document(PageSize.A4, 36, 36, 50, 36)
-    def writer = PdfWriter.getInstance(doc, baos)
-    doc.open()
-
-    // Fonts
-    def fontTitle    = new Font(Font.HELVETICA, 20, Font.BOLD, Color.WHITE)
-    def fontBadge    = new Font(Font.HELVETICA, 11, Font.BOLD, Color.WHITE)
-    def fontHeader   = new Font(Font.HELVETICA, 14, Font.BOLD, new Color(44, 62, 80))
-    def fontLabel    = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(73, 80, 87))
-    def fontBoldVal  = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(73, 80, 87))
-    def fontAlert    = new Font(Font.HELVETICA, 10, Font.NORMAL, new Color(33, 37, 41))
-    def fontMetric   = new Font(Font.HELVETICA, 22, Font.BOLD, Color.WHITE)
-    def fontMetLabel = new Font(Font.HELVETICA, 8, Font.BOLD, Color.WHITE)
-    def fontLink     = new Font(Font.HELVETICA, 9, Font.UNDERLINE, new Color(51, 122, 183))
-    def fontFooter   = new Font(Font.HELVETICA, 8, Font.ITALIC, new Color(173, 181, 189))
-    def fontRed      = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(220, 53, 69))
-    def fontOrange   = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(253, 126, 20))
-    def fontGreen    = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(40, 167, 69))
-    def fontGray     = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(108, 117, 125))
-    def fontCyan     = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(23, 162, 184))
-
-    // ─── Helper: Horizontal Rule ───
-    def addHorizontalRule = { color ->
-        def hrTable = new PdfPTable(1)
-        hrTable.widthPercentage = 100
-        def hrCell = new PdfPCell(new Phrase(' '))
-        hrCell.border = Rectangle.BOTTOM
-        hrCell.borderColor = color
-        hrCell.borderWidthBottom = 1f
-        hrCell.paddingTop = 0
-        hrCell.paddingBottom = 4
-        hrTable.addCell(hrCell)
-        doc.add(hrTable)
-    }
-
-    // ─── Helper: Metric Box ───
-    def metricCell = { value, label, bgColor ->
-        def table = new PdfPTable(1)
-        table.widthPercentage = 100
-        def c1 = new PdfPCell(new Phrase(value, fontMetric))
-        c1.backgroundColor = bgColor
-        c1.horizontalAlignment = Element.ALIGN_CENTER
-        c1.border = Rectangle.NO_BORDER
-        c1.paddingTop = 12
-        c1.paddingBottom = 4
-        def c2 = new PdfPCell(new Phrase(label, fontMetLabel))
-        c2.backgroundColor = bgColor
-        c2.horizontalAlignment = Element.ALIGN_CENTER
-        c2.border = Rectangle.NO_BORDER
-        c2.paddingTop = 2
-        c2.paddingBottom = 12
-        table.addCell(c1)
-        table.addCell(c2)
-        def wrap = new PdfPCell(table)
-        wrap.border = Rectangle.NO_BORDER
-        wrap.padding = 4
-        return wrap
-    }
-
-    // ─── HEADER ───
-    def headerTable = new PdfPTable(1)
-    headerTable.widthPercentage = 100
-    def titleCell = new PdfPCell()
-    titleCell.backgroundColor = headerColor
-    titleCell.horizontalAlignment = Element.ALIGN_CENTER
-    titleCell.paddingTop = 20
-    titleCell.paddingBottom = 20
-    titleCell.border = Rectangle.NO_BORDER
-    titleCell.addElement(new Paragraph('SonarQube Analysis Report', fontTitle))
-    def badge = new Paragraph(statusText, fontBadge)
-    badge.alignment = Element.ALIGN_CENTER
-    titleCell.addElement(badge)
-    headerTable.addCell(titleCell)
-    doc.add(headerTable)
-    doc.add(Chunk.NEWLINE)
-
-    // ─── ALERT BOX ───
-    def alertTable = new PdfPTable(1)
-    alertTable.widthPercentage = 100
-    def alertCell = new PdfPCell(new Phrase(alertMsg, fontAlert))
-    alertCell.backgroundColor = alertColor
-    alertCell.horizontalAlignment = Element.ALIGN_LEFT
-    alertCell.verticalAlignment = Element.ALIGN_MIDDLE
-    alertCell.paddingTop = 10
-    alertCell.paddingBottom = 10
-    alertCell.paddingLeft = 12
-    alertCell.paddingRight = 12
-    alertCell.border = Rectangle.NO_BORDER
-    alertTable.addCell(alertCell)
-    doc.add(alertTable)
-    doc.add(Chunk.NEWLINE)
-
-    if (totalNewIssues > 0) {
-        def warnTable = new PdfPTable(1)
-        warnTable.widthPercentage = 100
-        def warnFont = new Font(Font.HELVETICA, 10, Font.BOLD, new Color(133, 100, 4))
-        def warnMsg = "New Issues Detected: ${totalNewIssues} new issue(s) found in this commit. Please review before merging."
-        def warnCell = new PdfPCell(new Phrase(warnMsg, warnFont))
-        warnCell.backgroundColor = new Color(255, 243, 205)
-        warnCell.border = Rectangle.BOX
-        warnCell.borderColor = new Color(253, 126, 20)
-        warnCell.borderWidth = 1.5f
-        warnCell.paddingTop = 10
-        warnCell.paddingBottom = 10
-        warnCell.paddingLeft = 12
-        warnCell.paddingRight = 12
-        warnTable.addCell(warnCell)
-        doc.add(warnTable)
-        doc.add(Chunk.NEWLINE)
-    }
-
-    // ─── SECTION HELPER ───
-    def addSection = { title ->
-        def p = new Paragraph(title, fontHeader)
-        p.spacingBefore = 14
-        p.spacingAfter = 6
-        doc.add(p)
-        addHorizontalRule(new Color(233, 236, 239))
-    }
-
-    // ─── BUILD INFO ───
-    addSection('Build Information')
-    def infoTable = new PdfPTable([30f, 70f] as float[])
-    infoTable.widthPercentage = 100
-    def infoRows = [
-        ['Project',      safe(env.JOB_NAME)],
-        ['Build Number', "#${safe(env.BUILD_NUMBER)}"],
-        ['Commit',       safe(env.GIT_COMMIT)?.take(7) ?: 'N/A'],
-        ['Branch',       safe(env.GIT_BRANCH, 'main')],
-        ['Build Status', statusText],
-        ['Quality Gate', safe(env.SONAR_STATUS, 'UNKNOWN')],
-        ['Duration',     safe(currentBuild.durationString)]
+    // ─── Gather ALL serializable data ───
+    def reportData = [
+        statusText:       statusText,
+        buildStatus:      buildStatus,
+        jobName:          safe(env.JOB_NAME),
+        buildNumber:      safe(env.BUILD_NUMBER),
+        gitCommit:        safe(env.GIT_COMMIT)?.take(7) ?: 'N/A',
+        gitBranch:        safe(env.GIT_BRANCH, 'main'),
+        duration:         safe(currentBuild.durationString),
+        buildUrl:         safe(env.BUILD_URL),
+        sonarStatus:      safe(env.SONAR_STATUS, 'UNKNOWN'),
+        sonarBugs:        safe(env.SONAR_BUGS, '0'),
+        sonarVulns:       safe(env.SONAR_VULNERABILITIES, '0'),
+        sonarSmells:      safe(env.SONAR_CODE_SMELLS, '0'),
+        sonarCoverage:    safe(env.SONAR_COVERAGE, '0.0'),
+        sonarDuplication: safe(env.SONAR_DUPLICATION, '0.0'),
+        sonarLines:       safe(env.SONAR_LINES, '0'),
+        sonarHotspots:    safe(env.SONAR_HOTSPOTS, '0'),
+        sonarNewBugs:     safe(env.SONAR_NEW_BUGS, '0'),
+        sonarNewVulns:    safe(env.SONAR_NEW_VULNERABILITIES, '0'),
+        sonarNewSmells:   safe(env.SONAR_NEW_CODE_SMELLS, '0'),
+        sonarNewHotspots: safe(env.SONAR_NEW_HOTSPOTS, '0'),
+        sonarNewCoverage: safe(env.SONAR_NEW_COVERAGE, '0.0'),
+        sonarBlocker:     safe(env.SONAR_BLOCKER, '0'),
+        sonarCritical:    safe(env.SONAR_CRITICAL, '0'),
+        sonarMajor:       safe(env.SONAR_MAJOR, '0'),
+        sonarMinor:       safe(env.SONAR_MINOR, '0'),
+        sonarInfo:        safe(env.SONAR_INFO, '0'),
+        sonarHost:        sonarHost,
+        projectKey:       projectKey,
+        analysisDate:     new Date().format('yyyy-MM-dd')
     ]
-    infoRows.each { row ->
-        def c1 = new PdfPCell(new Phrase(row[0], fontLabel))
-        c1.border = Rectangle.BOTTOM
-        c1.borderColor = new Color(233, 236, 239)
-        c1.paddingTop = 6
-        c1.paddingBottom = 6
-        def c2 = new PdfPCell(new Phrase(row[1], fontBoldVal))
-        c2.border = Rectangle.BOTTOM
-        c2.borderColor = new Color(233, 236, 239)
-        c2.paddingTop = 6
-        c2.paddingBottom = 6
-        infoTable.addCell(c1)
-        infoTable.addCell(c2)
-    }
-    doc.add(infoTable)
-    doc.add(Chunk.NEWLINE)
 
-    // ─── NEW ISSUES ───
-    addSection('New Issues (Introduced in This Commit)')
-    def newTable = new PdfPTable(4)
-    newTable.widthPercentage = 100
-    def newIssues = [
-        [safe(env.SONAR_NEW_BUGS, '0'),            'New Bugs',            new Color(253, 126, 20)],
-        [safe(env.SONAR_NEW_VULNERABILITIES, '0'), 'New Vulnerabilities', new Color(253, 126, 20)],
-        [safe(env.SONAR_NEW_CODE_SMELLS, '0'),     'New Code Smells',     new Color(253, 126, 20)],
-        [safe(env.SONAR_NEW_HOTSPOTS, '0'),        'New Hotspots',        new Color(253, 126, 20)]
-    ]
-    newIssues.each { m -> newTable.addCell(metricCell(m[0], m[1], m[2])) }
-    doc.add(newTable)
-    doc.add(Chunk.NEWLINE)
+    // ─── Generate PDF bytes inside @NonCPS ───
+    byte[] pdfBytes = generateExecutivePdf(reportData)
 
-    // ─── FINAL SUMMARY ───
-    addSection('Final Summary')
-    def sumTable = new PdfPTable([40f, 60f] as float[])
-    sumTable.widthPercentage = 100
-    def sumRows = [
-        ['Quality Gate',        safe(env.SONAR_STATUS, 'UNKNOWN')],
-        ['Coverage',            "${safe(env.SONAR_COVERAGE, '0.0')}%"],
-        ['Code Smells',         safe(env.SONAR_CODE_SMELLS, '0')],
-        ['Bugs',                safe(env.SONAR_BUGS, '0')],
-        ['Vulnerabilities',     safe(env.SONAR_VULNERABILITIES, '0')],
-        ['Hotspots',            safe(env.SONAR_HOTSPOTS, '0')],
-        ['LOC',                 safe(env.SONAR_LINES, '0')],
-        ['Duplication',         "${safe(env.SONAR_DUPLICATION, '0.0')}%"],
-        ['New Bugs',            safe(env.SONAR_NEW_BUGS, '0')],
-        ['New Vulnerabilities', safe(env.SONAR_NEW_VULNERABILITIES, '0')],
-        ['New Code Smells',     safe(env.SONAR_NEW_CODE_SMELLS, '0')],
-        ['New Hotspots',        safe(env.SONAR_NEW_HOTSPOTS, '0')],
-        ['New Coverage',        "${safe(env.SONAR_NEW_COVERAGE, '0.0')}%"]
-    ]
-    sumRows.each { row ->
-        def c1 = new PdfPCell(new Phrase(row[0], fontLabel))
-        c1.border = Rectangle.BOTTOM
-        c1.borderColor = new Color(233, 236, 239)
-        c1.paddingTop = 6
-        c1.paddingBottom = 6
-        def c2 = new PdfPCell(new Phrase(row[1], fontBoldVal))
-        c2.border = Rectangle.BOTTOM
-        c2.borderColor = new Color(233, 236, 239)
-        c2.paddingTop = 6
-        c2.paddingBottom = 6
-        sumTable.addCell(c1)
-        sumTable.addCell(c2)
-    }
-    doc.add(sumTable)
-    doc.add(Chunk.NEWLINE)
-
-    // ─── OVERALL METRICS ───
-    addSection('Overall Code Quality Metrics')
-    def metTable = new PdfPTable(4)
-    metTable.widthPercentage = 100
-    def metrics = [
-        [safe(env.SONAR_BUGS, '0'),             'Total Bugs',            new Color(220, 53, 69)],
-        [safe(env.SONAR_VULNERABILITIES, '0'),  'Total Vulnerabilities', new Color(220, 53, 69)],
-        [safe(env.SONAR_CODE_SMELLS, '0'),      'Total Code Smells',     new Color(253, 126, 20)],
-        ["${safe(env.SONAR_COVERAGE, '0.0')}%", 'Coverage',              new Color(40, 167, 69)]
-    ]
-    metrics.each { m -> metTable.addCell(metricCell(m[0], m[1], m[2])) }
-    doc.add(metTable)
-
-    def metTable2 = new PdfPTable(3)
-    metTable2.widthPercentage = 100
-    def metrics2 = [
-        [safe(env.SONAR_HOTSPOTS, '0'),            'Security Hotspots', new Color(108, 117, 125)],
-        ["${safe(env.SONAR_DUPLICATION, '0.0')}%", 'Duplication',       new Color(108, 117, 125)],
-        [safe(env.SONAR_LINES, '0'),               'Lines of Code',     new Color(108, 117, 125)]
-    ]
-    metrics2.each { m -> metTable2.addCell(metricCell(m[0], m[1], m[2])) }
-    doc.add(metTable2)
-    doc.add(Chunk.NEWLINE)
-
-    // ─── SEVERITY BREAKDOWN ───
-    addSection('Issue Severity Breakdown')
-    def sevTable = new PdfPTable(5)
-    sevTable.widthPercentage = 100
-    def severities = [
-        [safe(env.SONAR_BLOCKER, '0'),  'BLOCKER',  fontRed],
-        [safe(env.SONAR_CRITICAL, '0'), 'CRITICAL', fontRed],
-        [safe(env.SONAR_MAJOR, '0'),    'MAJOR',    fontOrange],
-        [safe(env.SONAR_MINOR, '0'),    'MINOR',    fontGray],
-        [safe(env.SONAR_INFO, '0'),     'INFO',     fontCyan]
-    ]
-    severities.each { s ->
-        def inner = new PdfPTable(1)
-        inner.widthPercentage = 100
-        def c1 = new PdfPCell(new Phrase(s[0], s[2]))
-        c1.horizontalAlignment = Element.ALIGN_CENTER
-        c1.border = Rectangle.NO_BORDER
-        c1.paddingTop = 8
-        c1.paddingBottom = 4
-        def c2 = new PdfPCell(new Phrase(s[1], new Font(Font.HELVETICA, 8, Font.BOLD, new Color(108, 117, 125))))
-        c2.horizontalAlignment = Element.ALIGN_CENTER
-        c2.border = Rectangle.NO_BORDER
-        c2.paddingTop = 2
-        c2.paddingBottom = 8
-        inner.addCell(c1)
-        inner.addCell(c2)
-        def wrap = new PdfPCell(inner)
-        wrap.backgroundColor = new Color(248, 249, 250)
-        wrap.border = Rectangle.NO_BORDER
-        wrap.padding = 4
-        sevTable.addCell(wrap)
-    }
-    doc.add(sevTable)
-    doc.add(Chunk.NEWLINE)
-
-    // ─── QUICK LINKS ───
-    addSection('Quick Links')
-    def linkList = [
-        ['Dashboard',       "${sonarHost}/dashboard?id=${projectKey}"],
-        ['Metrics',         "${sonarHost}/component_measures?id=${projectKey}"],
-        ['All Issues',      "${sonarHost}/project/issues?id=${projectKey}&resolved=false"],
-        ['New Issues',      "${sonarHost}/project/issues?id=${projectKey}&resolved=false&sinceLeakPeriod=true"],
-        ['Hotspots',        "${sonarHost}/security_hotspots?id=${projectKey}"],
-        ['Jenkins Console', "${safe(env.BUILD_URL)}console"]
-    ]
-    linkList.each { item ->
-        def p = new Paragraph()
-        p.add(new Chunk("${item[0]}: ", fontLabel))
-        def anchor = new Anchor(item[1], fontLink)
-        anchor.reference = item[1]
-        p.add(anchor)
-        p.spacingAfter = 4
-        doc.add(p)
-    }
-
-    // ─── FOOTER ───
-    doc.add(Chunk.NEWLINE)
-    addHorizontalRule(new Color(233, 236, 239))
-    def footerText = "Generated by Jenkins | Build #${safe(env.BUILD_NUMBER)} | ${new Date().format('yyyy-MM-dd HH:mm:ss')}"
-    def footerP = new Paragraph(footerText, fontFooter)
-    footerP.alignment = Element.ALIGN_CENTER
-    footerP.spacingBefore = 8
-    doc.add(footerP)
-
-    doc.close()
-
-    // ─── Transfer PDF to Agent Workspace ───
+    // ─── Transfer to agent workspace ───
     def pdfName = "sonar-report-${env.BUILD_NUMBER}.pdf"
     def b64Name = ".sonar-report-${env.BUILD_NUMBER}.b64"
 
-    def base64 = java.util.Base64.getEncoder().encodeToString(baos.toByteArray())
+    def base64 = java.util.Base64.getEncoder().encodeToString(pdfBytes)
 
     writeFile file: b64Name, text: base64
     sh "base64 -d ${b64Name} > ${pdfName} && rm -f ${b64Name}"
 
-    echo "Native PDF generated and transferred to agent workspace: ${pdfName}"
+    echo "Executive PDF generated: ${pdfName}"
 
-    // ─── EMAIL WITH PDF ATTACHMENT ───
+    // ─── Email ───
     emailext (
-        subject: "[${statusText}] SonarQube Report: ${safe(env.JOB_NAME)} #${safe(env.BUILD_NUMBER)}",
+        subject: "[${statusText}] SonarQube Executive Report: ${safe(env.JOB_NAME)} #${safe(env.BUILD_NUMBER)}",
         body: """
-            <p>Please find the attached SonarQube Quality Report (PDF).</p>
+            <p>Please find the attached SonarQube Executive Report (PDF).</p>
             <p><strong>Project:</strong> ${safe(env.JOB_NAME)}<br>
                <strong>Build:</strong> #${safe(env.BUILD_NUMBER)}<br>
                <strong>Status:</strong> ${statusText}<br>
@@ -370,7 +96,339 @@ def call(Map config = [:]) {
         attachLog: true
     )
 
-    // Cleanup
     sh "rm -f ${pdfName}"
-    echo "Cleaned up PDF file from workspace."
+    echo "Cleaned up PDF file."
+}
+
+// ═══════════════════════════════════════════════════════════════
+// @NonCPS — Jenkins NEVER tries to serialize anything below here
+// ═══════════════════════════════════════════════════════════════
+@NonCPS
+byte[] generateExecutivePdf(Map d) {
+
+    def baos = new ByteArrayOutputStream()
+    def doc = new Document(PageSize.A4, 28, 28, 28, 28)
+    def writer = PdfWriter.getInstance(doc, baos)
+    doc.open()
+    def cb = writer.directContent
+
+    // ─── Colors ───
+    def cDark      = new Color(44, 62, 80)
+    def cGray      = new Color(120, 120, 120)
+    def cLightGray = new Color(245, 245, 245)
+    def cBorder    = new Color(220, 220, 220)
+    def cGreen     = new Color(76, 175, 80)
+    def cRed       = new Color(220, 53, 69)
+    def cOrange    = new Color(253, 126, 20)
+    def cYellow    = new Color(255, 193, 7)
+    def cBlue      = new Color(23, 162, 184)
+    def cPurple    = new Color(108, 117, 125)
+
+    // ─── Fonts ───
+    def fTitle    = new Font(Font.HELVETICA, 20, Font.BOLD, cDark)
+    def fSubTitle = new Font(Font.HELVETICA, 12, Font.BOLD, cDark)
+    def fHeader   = new Font(Font.HELVETICA, 9, Font.BOLD, cGray)
+    def fValue    = new Font(Font.HELVETICA, 9, Font.NORMAL, cDark)
+    def fBig      = new Font(Font.HELVETICA, 32, Font.BOLD, cDark)
+    def fMetric   = new Font(Font.HELVETICA, 26, Font.BOLD, cDark)
+    def fLabel    = new Font(Font.HELVETICA, 8, Font.NORMAL, cGray)
+    def fGrade    = new Font(Font.HELVETICA, 22, Font.BOLD, Color.WHITE)
+    def fGate     = new Font(Font.HELVETICA, 10, Font.BOLD, Color.WHITE)
+    def fSmall    = new Font(Font.HELVETICA, 8, Font.NORMAL, cGray)
+    def fFooter   = new Font(Font.HELVETICA, 7, Font.ITALIC, cGray)
+
+    // ─── Helpers ───
+    def cell = { content, font, align = Element.ALIGN_LEFT, bg = null, border = Rectangle.NO_BORDER ->
+        def c = new PdfPCell(new Phrase(content, font))
+        c.horizontalAlignment = align
+        c.verticalAlignment = Element.ALIGN_MIDDLE
+        c.border = border
+        if (bg) c.backgroundColor = bg
+        c
+    }
+
+    def emptyCell = { w = 1 ->
+        def c = new PdfPCell(new Phrase(' '))
+        c.border = Rectangle.NO_BORDER
+        c.colspan = w
+        c
+    }
+
+    // Grade circle template
+    def gradeImage = { letter, color ->
+        def tp = cb.createTemplate(44, 44)
+        tp.setColorFill(color)
+        tp.circle(22, 22, 20)
+        tp.fill()
+        tp.setColorFill(Color.WHITE)
+        tp.beginText()
+        tp.setFontAndSize(Font.HELVETICA_BOLD, 22)
+        tp.showTextAligned(Element.ALIGN_CENTER, letter, 22, 14, 0)
+        tp.endText()
+        Image.getInstance(tp)
+    }
+
+    // Quality gate badge template
+    def gateBadge = { text, color ->
+        def tp = cb.createTemplate(90, 28)
+        tp.setColorFill(color)
+        tp.roundRectangle(0, 0, 90, 28, 14)
+        tp.fill()
+        tp.setColorFill(Color.WHITE)
+        tp.beginText()
+        tp.setFontAndSize(Font.HELVETICA_BOLD, 11)
+        tp.showTextAligned(Element.ALIGN_CENTER, text, 45, 9, 0)
+        tp.endText()
+        Image.getInstance(tp)
+    }
+
+    // Ring gauge template (donut)
+    def ringGauge = { pct, color ->
+        def tp = cb.createTemplate(90, 90)
+        // Outer ring background
+        tp.setColorStroke(new Color(230, 230, 230))
+        tp.setLineWidth(10)
+        tp.circle(45, 45, 35)
+        tp.stroke()
+        // Colored ring (full circle for simplicity; color indicates status)
+        tp.setColorStroke(color)
+        tp.setLineWidth(10)
+        tp.circle(45, 45, 35)
+        tp.stroke()
+        // Center text
+        tp.setColorFill(cDark)
+        tp.beginText()
+        tp.setFontAndSize(Font.HELVETICA_BOLD, 22)
+        tp.showTextAligned(Element.ALIGN_CENTER, "${pct}%", 45, 36, 0)
+        tp.endText()
+        Image.getInstance(tp)
+    }
+
+    // Simple grade calculator
+    def computeGrade = { count ->
+        def n = 0
+        try { n = count.toString().toInteger() } catch (e) {}
+        if (n == 0) return ['A', cGreen]
+        if (n < 10) return ['B', new Color(139, 195, 74)]
+        if (n < 50) return ['C', cYellow]
+        if (n < 100) return ['D', cOrange]
+        return ['E', cRed]
+    }
+
+    def relGrade = computeGrade(d.sonarBugs)
+    def secGrade = computeGrade(d.sonarVulns.toInteger() + d.sonarHotspots.toInteger())
+    def mainGrade = computeGrade(d.sonarSmells)
+
+    // ═══════════════════════════════════════════════════════
+    // HEADER
+    // ═══════════════════════════════════════════════════════
+    def headT = new PdfPTable([60f, 40f] as float[])
+    headT.widthPercentage = 100
+    def leftHead = new PdfPCell()
+    leftHead.border = Rectangle.NO_BORDER
+    leftHead.addElement(new Paragraph('SonarQube', fTitle))
+    leftHead.addElement(new Paragraph('Executive Report', fSubTitle))
+    headT.addCell(leftHead)
+
+    def rightHead = new PdfPCell()
+    rightHead.border = Rectangle.NO_BORDER
+    rightHead.horizontalAlignment = Element.ALIGN_RIGHT
+    rightHead.verticalAlignment = Element.ALIGN_TOP
+    def gateColor = (d.sonarStatus == 'OK') ? cGreen : cRed
+    def gateText = (d.sonarStatus == 'OK') ? 'PASSED' : 'FAILED'
+    rightHead.addElement(new Paragraph(' '))
+    rightHead.addElement(new Paragraph(' '))
+    rightHead.addElement(new Chunk(gateBadge(gateText, gateColor), 0, 0))
+    headT.addCell(rightHead)
+    doc.add(headT)
+
+    // Thin separator line
+    def sep = new PdfPTable(1)
+    sep.widthPercentage = 100
+    def sepC = new PdfPCell(new Phrase(' '))
+    sepC.border = Rectangle.BOTTOM
+    sepC.borderColor = cBorder
+    sepC.paddingBottom = 4
+    sep.addCell(sepC)
+    doc.add(sep)
+    doc.add(Chunk.NEWLINE)
+
+    // ═══════════════════════════════════════════════════════
+    // PROJECT METADATA
+    // ═══════════════════════════════════════════════════════
+    def metaT = new PdfPTable([33f, 33f, 34f] as float[])
+    metaT.widthPercentage = 100
+    metaT.addCell(cell('Project Name', fHeader, Element.ALIGN_LEFT))
+    metaT.addCell(cell('Branch', fHeader, Element.ALIGN_LEFT))
+    metaT.addCell(cell('Analysis Date', fHeader, Element.ALIGN_RIGHT))
+    metaT.addCell(cell(d.jobName, fValue, Element.ALIGN_LEFT))
+    metaT.addCell(cell(d.gitBranch, fValue, Element.ALIGN_LEFT))
+    metaT.addCell(cell(d.analysisDate, fValue, Element.ALIGN_RIGHT))
+    doc.add(metaT)
+
+    def meta2 = new PdfPTable([33f, 33f, 34f] as float[])
+    meta2.widthPercentage = 100
+    meta2.addCell(cell('Size Rating', fHeader, Element.ALIGN_LEFT))
+    meta2.addCell(cell('Lines of Code', fHeader, Element.ALIGN_LEFT))
+    meta2.addCell(cell('Quality Gate', fHeader, Element.ALIGN_RIGHT))
+    def sizeCell = cell('', fValue, Element.ALIGN_LEFT)
+    sizeCell.addElement(new Chunk(gradeImage('M', new Color(66, 133, 244)), 0, 0))
+    meta2.addCell(sizeCell)
+    def locCell = cell('', fValue, Element.ALIGN_LEFT)
+    locCell.addElement(new Paragraph(d.sonarLines, fBig))
+    meta2.addCell(locCell)
+    meta2.addCell(cell(d.sonarStatus, fValue, Element.ALIGN_RIGHT))
+    doc.add(meta2)
+    doc.add(Chunk.NEWLINE)
+
+    // ═══════════════════════════════════════════════════════
+    // THREE PILLARS: Reliability | Security | Maintainability
+    // ═══════════════════════════════════════════════════════
+    def pillarT = new PdfPTable(3)
+    pillarT.widthPercentage = 100
+    pillarT.spacingBefore = 8
+
+    def pillarCell = { title, gradeArr, metricLabel, metricValue, newLabel, newValue ->
+        def t = new PdfPTable(1)
+        t.widthPercentage = 100
+        // Title
+        def tc = cell(title, new Font(Font.HELVETICA, 11, Font.BOLD, cGray), Element.ALIGN_CENTER)
+        tc.paddingBottom = 8
+        t.addCell(tc)
+        // Grade circle
+        def gc = cell('', fValue, Element.ALIGN_CENTER)
+        gc.addElement(new Chunk(gradeImage(gradeArr[0], gradeArr[1]), 0, 0))
+        gc.paddingBottom = 6
+        t.addCell(gc)
+        // Metric
+        def mc = cell(metricValue, new Font(Font.HELVETICA, 24, Font.BOLD, cDark), Element.ALIGN_CENTER)
+        mc.paddingBottom = 2
+        t.addCell(mc)
+        def ml = cell(metricLabel, fLabel, Element.ALIGN_CENTER)
+        ml.paddingBottom = 10
+        t.addCell(ml)
+        // New code box
+        def nt = new PdfPTable(1)
+        nt.widthPercentage = 100
+        def nc = cell("${newLabel}: ${newValue}", fSmall, Element.ALIGN_CENTER, cLightGray)
+        nc.paddingTop = 6
+        nc.paddingBottom = 6
+        nt.addCell(nc)
+        t.addCell(nt)
+        def wrap = new PdfPCell(t)
+        wrap.border = Rectangle.BOX
+        wrap.borderColor = cBorder
+        wrap.padding = 10
+        return wrap
+    }
+
+    pillarT.addCell(pillarCell('Reliability', relGrade, 'Bugs', d.sonarBugs, 'New Bugs', d.sonarNewBugs))
+    pillarT.addCell(pillarCell('Security', secGrade, 'Vulnerabilities', d.sonarVulns, 'New Vulnerabilities', d.sonarNewVulns))
+    pillarT.addCell(pillarCell('Maintainability', mainGrade, 'Code Smells', d.sonarSmells, 'New Code Smells', d.sonarNewSmells))
+    doc.add(pillarT)
+    doc.add(Chunk.NEWLINE)
+
+    // ═══════════════════════════════════════════════════════
+    // MIDDLE SECTION: Issues by Severity | Coverage | Duplications
+    // ═══════════════════════════════════════════════════════
+    def midT = new PdfPTable([55f, 22f, 23f] as float[])
+    midT.widthPercentage = 100
+
+    // ─── Left: Issues by Severity ───
+    def sevT = new PdfPTable([25f, 25f, 25f, 25f] as float[])
+    sevT.widthPercentage = 100
+    // Header row
+    sevT.addCell(emptyCell())
+    sevT.addCell(cell('Bug', fHeader, Element.ALIGN_CENTER))
+    sevT.addCell(cell('Vulnerability', fHeader, Element.ALIGN_CENTER))
+    sevT.addCell(cell('Code Smell', fHeader, Element.ALIGN_CENTER))
+
+    def sevRow = { name, color, bug, vuln, smell ->
+        def lc = cell("  ${name}", new Font(Font.HELVETICA, 9, Font.BOLD, color), Element.ALIGN_LEFT)
+        lc.border = Rectangle.BOTTOM
+        lc.borderColor = cBorder
+        lc.paddingTop = 6
+        lc.paddingBottom = 6
+        sevT.addCell(lc)
+        def vc = { v ->
+            def c = cell(v.toString(), fValue, Element.ALIGN_CENTER)
+            c.border = Rectangle.BOTTOM
+            c.borderColor = cBorder
+            c.paddingTop = 6
+            c.paddingBottom = 6
+            c
+        }
+        sevT.addCell(vc(bug))
+        sevT.addCell(vc(vuln))
+        sevT.addCell(vc(smell))
+    }
+
+    // We don't have per-severity breakdown by type from the API, so we show totals per severity
+    // and overall type totals in the top row. This is a best-effort visual.
+    sevRow('Blocker',  cRed,    d.sonarBlocker,  '0', '0')
+    sevRow('Critical', cRed,    d.sonarCritical, '0', '0')
+    sevRow('Major',    cOrange, d.sonarMajor,    '0', '0')
+    sevRow('Minor',    cYellow, d.sonarMinor,    '0', '0')
+    sevRow('Info',     cBlue,   d.sonarInfo,     '0', '0')
+
+    def sevWrap = new PdfPCell(sevT)
+    sevWrap.border = Rectangle.BOX
+    sevWrap.borderColor = cBorder
+    sevWrap.padding = 8
+    midT.addCell(sevWrap)
+
+    // ─── Center: Coverage ───
+    def covT = new PdfPTable(1)
+    covT.widthPercentage = 100
+    covT.addCell(cell('Coverage', fSubTitle, Element.ALIGN_CENTER))
+    def covImg = cell('', fValue, Element.ALIGN_CENTER)
+    def covColor = (d.sonarCoverage.toFloat() >= 80.0) ? cGreen : (d.sonarCoverage.toFloat() >= 50.0) ? cYellow : cRed
+    covImg.addElement(new Chunk(ringGauge(d.sonarCoverage, covColor), 0, 0))
+    covImg.paddingTop = 6
+    covT.addCell(covImg)
+    covT.addCell(cell('Unit Tests', fLabel, Element.ALIGN_CENTER))
+    covT.addCell(cell('0', fMetric, Element.ALIGN_CENTER))
+    covT.addCell(cell("Coverage on New Code: ${d.sonarNewCoverage}%", fSmall, Element.ALIGN_CENTER, cLightGray))
+    def covWrap = new PdfPCell(covT)
+    covWrap.border = Rectangle.BOX
+    covWrap.borderColor = cBorder
+    covWrap.padding = 8
+    midT.addCell(covWrap)
+
+    // ─── Right: Duplications ───
+    def dupT = new PdfPTable(1)
+    dupT.widthPercentage = 100
+    dupT.addCell(cell('Duplications', fSubTitle, Element.ALIGN_CENTER))
+    def dupImg = cell('', fValue, Element.ALIGN_CENTER)
+    def dupColor = (d.sonarDuplication.toFloat() <= 3.0) ? cGreen : (d.sonarDuplication.toFloat() <= 10.0) ? cYellow : cRed
+    dupImg.addElement(new Chunk(ringGauge(d.sonarDuplication, dupColor), 0, 0))
+    dupImg.paddingTop = 6
+    dupT.addCell(dupImg)
+    dupT.addCell(cell('Duplicated blocks', fLabel, Element.ALIGN_CENTER))
+    dupT.addCell(cell('0', fMetric, Element.ALIGN_CENTER))
+    dupT.addCell(cell("Duplications on New Code: 0%", fSmall, Element.ALIGN_CENTER, cLightGray))
+    def dupWrap = new PdfPCell(dupT)
+    dupWrap.border = Rectangle.BOX
+    dupWrap.borderColor = cBorder
+    dupWrap.padding = 8
+    midT.addCell(dupWrap)
+
+    doc.add(midT)
+    doc.add(Chunk.NEWLINE)
+
+    // ═══════════════════════════════════════════════════════
+    // FOOTER
+    // ═══════════════════════════════════════════════════════
+    def footT = new PdfPTable(1)
+    footT.widthPercentage = 100
+    def footC = new PdfPCell(new Phrase("Generated by Jenkins | Build #${d.buildNumber} | ${d.analysisDate}", fFooter))
+    footC.border = Rectangle.TOP
+    footC.borderColor = cBorder
+    footC.paddingTop = 6
+    footC.horizontalAlignment = Element.ALIGN_CENTER
+    footT.addCell(footC)
+    doc.add(footT)
+
+    doc.close()
+    return baos.toByteArray()
 }
