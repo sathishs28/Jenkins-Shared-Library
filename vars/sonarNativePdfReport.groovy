@@ -7,14 +7,10 @@ import java.awt.Color
 
 /**
  * Executive SonarQube PDF Report Generator
- * Replicates the bitegarden-style executive summary natively in PDF.
  *
  * Usage:
  *   @Library('sonar-pdf-reports') _
- *   sonarNativePdfReport(
- *       recipientEmail: 'team@company.com',
- *       fromEmail: 'jenkins@company.com'
- *   )
+ *   sonarNativePdfReport(recipientEmail: 'team@company.com')
  */
 def call(Map config = [:]) {
 
@@ -101,7 +97,7 @@ def call(Map config = [:]) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// @NonCPS — Jenkins NEVER tries to serialize anything below here
+// @NonCPS — Jenkins NEVER serializes anything below here
 // ═══════════════════════════════════════════════════════════════
 @NonCPS
 byte[] generateExecutivePdf(Map d) {
@@ -111,6 +107,10 @@ byte[] generateExecutivePdf(Map d) {
     def writer = PdfWriter.getInstance(doc, baos)
     doc.open()
     def cb = writer.directContent
+
+    // ─── BaseFonts for PdfTemplate (required for raw canvas text) ───
+    def bfBold   = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.WINANSI, BaseFont.NOT_EMBEDDED)
+    def bfNormal = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.WINANSI, BaseFont.NOT_EMBEDDED)
 
     // ─── Colors ───
     def cDark      = new Color(44, 62, 80)
@@ -124,7 +124,7 @@ byte[] generateExecutivePdf(Map d) {
     def cBlue      = new Color(23, 162, 184)
     def cPurple    = new Color(108, 117, 125)
 
-    // ─── Fonts ───
+    // ─── Fonts for Paragraphs/Phrases ───
     def fTitle    = new Font(Font.HELVETICA, 20, Font.BOLD, cDark)
     def fSubTitle = new Font(Font.HELVETICA, 12, Font.BOLD, cDark)
     def fHeader   = new Font(Font.HELVETICA, 9, Font.BOLD, cGray)
@@ -154,7 +154,7 @@ byte[] generateExecutivePdf(Map d) {
         c
     }
 
-    // Grade circle template
+    // Grade circle template (uses BaseFont, not Font constant)
     def gradeImage = { letter, color ->
         def tp = cb.createTemplate(44, 44)
         tp.setColorFill(color)
@@ -162,7 +162,7 @@ byte[] generateExecutivePdf(Map d) {
         tp.fill()
         tp.setColorFill(Color.WHITE)
         tp.beginText()
-        tp.setFontAndSize(Font.HELVETICA_BOLD, 22)
+        tp.setFontAndSize(bfBold, 22)
         tp.showTextAligned(Element.ALIGN_CENTER, letter, 22, 14, 0)
         tp.endText()
         Image.getInstance(tp)
@@ -176,7 +176,7 @@ byte[] generateExecutivePdf(Map d) {
         tp.fill()
         tp.setColorFill(Color.WHITE)
         tp.beginText()
-        tp.setFontAndSize(Font.HELVETICA_BOLD, 11)
+        tp.setFontAndSize(bfBold, 11)
         tp.showTextAligned(Element.ALIGN_CENTER, text, 45, 9, 0)
         tp.endText()
         Image.getInstance(tp)
@@ -198,7 +198,7 @@ byte[] generateExecutivePdf(Map d) {
         // Center text
         tp.setColorFill(cDark)
         tp.beginText()
-        tp.setFontAndSize(Font.HELVETICA_BOLD, 22)
+        tp.setFontAndSize(bfBold, 22)
         tp.showTextAligned(Element.ALIGN_CENTER, "${pct}%", 45, 36, 0)
         tp.endText()
         Image.getInstance(tp)
@@ -215,8 +215,8 @@ byte[] generateExecutivePdf(Map d) {
         return ['E', cRed]
     }
 
-    def relGrade = computeGrade(d.sonarBugs)
-    def secGrade = computeGrade(d.sonarVulns.toInteger() + d.sonarHotspots.toInteger())
+    def relGrade  = computeGrade(d.sonarBugs)
+    def secGrade  = computeGrade(d.sonarVulns.toInteger() + d.sonarHotspots.toInteger())
     def mainGrade = computeGrade(d.sonarSmells)
 
     // ═══════════════════════════════════════════════════════
@@ -235,7 +235,7 @@ byte[] generateExecutivePdf(Map d) {
     rightHead.horizontalAlignment = Element.ALIGN_RIGHT
     rightHead.verticalAlignment = Element.ALIGN_TOP
     def gateColor = (d.sonarStatus == 'OK') ? cGreen : cRed
-    def gateText = (d.sonarStatus == 'OK') ? 'PASSED' : 'FAILED'
+    def gateText  = (d.sonarStatus == 'OK') ? 'PASSED' : 'FAILED'
     rightHead.addElement(new Paragraph(' '))
     rightHead.addElement(new Paragraph(' '))
     rightHead.addElement(new Chunk(gateBadge(gateText, gateColor), 0, 0))
