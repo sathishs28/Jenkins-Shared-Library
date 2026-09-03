@@ -14,7 +14,7 @@ import java.awt.Color
  */
 def call(Map config = [:]) {
 
-    def recipient   = config.recipientEmail ?: 'ovt.bangalore@gmail.com'
+    def recipient   = config.recipientEmail ?: 'camnex.alerts@gmail.com'
     def fromEmail   = config.fromEmail     ?: 'sathish.s@vimatch.in'
     def sonarHost   = config.sonarHost     ?: env.SONAR_HOST ?: 'http://192.168.0.5:9000'
     def projectKey  = config.projectKey    ?: env.SONAR_PROJECT_KEY ?: 'STB_Automation_Framework'
